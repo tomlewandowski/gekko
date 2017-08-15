@@ -26,11 +26,9 @@ import rangeCreator from './rangecreator.vue'
 import { get } from '../../../tools/ajax'
 
 export default {
-  props: ['has'],
+  props: ['onlyTradable', 'onlyImportable'],
   data: () => {
     return {
-      exchanges: null,
-
       // defaults:
       exchange: 'poloniex',
       currency: 'USDT',
@@ -38,44 +36,49 @@ export default {
     };
   },
   created: function() {
-    get('exchanges', (err, data) => {
-        var exchangesRaw = data;
-        var exchanegsTemp = {};
-
-        exchangesRaw.forEach(e => {
-          exchanegsTemp[e.slug] = exchanegsTemp[e.slug] || {};
-
-          e.markets.forEach( pair => {
-            let [ currency, asset ] = pair['pair'];
-            exchanegsTemp[e.slug][currency] = exchanegsTemp[e.slug][currency] || [];
-            exchanegsTemp[e.slug][currency].push( asset );
-          });
-        });
-
-        this.exchanges = exchanegsTemp;
-        this.emitConfig();
-    });
+    this.emitConfig();
   },
   computed: {
+    exchanges: function() {
+
+      let exchanges = Object.assign({}, this.$store.state.exchanges);
+
+      if(_.isEmpty(exchanges))
+        return false;
+
+      if(this.onlyTradable) {
+        _.each(exchanges, (e, name) => {
+          if(!e.tradable)
+            delete exchanges[name];
+        });
+      }
+
+      if(this.onlyImportable) {
+        _.each(exchanges, (e, name) => {
+          if(!e.importable)
+            delete exchanges[name];
+        });
+      }
+
+      return exchanges;
+    },
     markets: function() {
       return this.exchanges ? this.exchanges[ this.exchange ] : null;
     },
 
     assets: function() {
-      return this.exchanges ? this.exchanges[this.exchange][this.currency] : null;
+      return this.exchanges ? this.exchanges[this.exchange].markets[this.currency] : null;
     },
 
     currencies: function() {
-      return this.exchanges ? _.keys( this.exchanges[this.exchange] ) : null;
+      return this.exchanges ? _.keys( this.exchanges[this.exchange].markets ) : null;
     },
     watchConfig: function() {
       return {
         watch: {
           exchange: this.exchange,
           currency: this.currency,
-          currencies: this.currencies,
           asset: this.asset,
-          assets: this.assets,
         }
       }
     }
@@ -84,7 +87,9 @@ export default {
   watch: {
     currency: function() { this.emitConfig() },
     asset: function() { this.emitConfig() },
-    market: function() { this.emitConfig() }
+    market: function() { this.emitConfig() },
+    exchanges: function() { this.emitConfig() },
+    exchange: function() { this.emitConfig() }
   },
 
   methods: {

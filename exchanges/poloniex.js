@@ -58,7 +58,10 @@ Trader.prototype.getPortfolio = function(callback) {
     var assetAmount = parseFloat( data[this.asset] );
     var currencyAmount = parseFloat( data[this.currency] );
 
-    if(!_.isNumber(assetAmount) || !_.isNumber(currencyAmount)) {
+    if(
+      !_.isNumber(assetAmount) || _.isNaN(assetAmount) ||
+      !_.isNumber(currencyAmount) || _.isNaN(currencyAmount)
+    ) {
       log.info('asset:', this.asset);
       log.info('currency:', this.currency);
       log.info('exchange data:', data);
@@ -97,15 +100,18 @@ Trader.prototype.getFee = function(callback) {
     if(err || data.error)
       return callback(err || data.error);
 
-    callback(false, parseFloat(data.takerFee));
+    callback(false, parseFloat(data.makerFee));
   }
   this.poloniex._private('returnFeeInfo', _.bind(set, this));
 }
 
 Trader.prototype.buy = function(amount, price, callback) {
+  var args = _.toArray(arguments);
   var set = function(err, result) {
-    if(err || result.error)
-      return log.error('unable to buy:', err, result);
+    if(err || result.error) {
+      log.error('unable to buy:', err, result);
+      return this.retry(this.buy, args);
+    }
 
     callback(null, result.orderNumber);
   }.bind(this);
@@ -114,9 +120,12 @@ Trader.prototype.buy = function(amount, price, callback) {
 }
 
 Trader.prototype.sell = function(amount, price, callback) {
+  var args = _.toArray(arguments);
   var set = function(err, result) {
-    if(err || result.error)
-      return log.error('unable to sell:', err, result);
+    if(err || result.error) {
+      log.error('unable to sell:', err, result);
+      return this.retry(this.sell, args);
+    }
 
     callback(null, result.orderNumber);
   }.bind(this);
@@ -133,11 +142,48 @@ Trader.prototype.checkOrder = function(order, callback) {
   this.poloniex.myOpenOrders(this.currency, this.asset, check);
 }
 
+Trader.prototype.getOrder = function(order, callback) {
+
+  var get = function(err, result) {
+
+    if(err)
+      return callback(err);
+
+    var price = 0;
+    var amount = 0;
+    var date = moment(0);
+
+    if(result.error === 'Order not found, or you are not the person who placed it.')
+      return callback(null, {price, amount, date});
+
+    _.each(result, trade => {
+
+      date = moment(trade.date);
+      price = ((price * amount) + (+trade.rate * trade.amount)) / (+trade.amount + amount);
+      amount += +trade.amount;
+
+    });
+
+    callback(err, {price, amount, date});
+  }.bind(this);
+
+  this.poloniex.returnOrderTrades(order, get);
+}
+
 Trader.prototype.cancelOrder = function(order, callback) {
+  var args = _.toArray(arguments);
   var cancel = function(err, result) {
+
+    // check if order is gone already
+    if(result.error === 'Invalid order number, or you are not the person who placed the order.')
+      return callback(true);
+
     if(err || !result.success) {
-      log.error('unable to cancel order', order, '(', err, result, ')');
+      log.error('unable to cancel order', order, '(', err, result, '), retrying');
+      return this.retry(this.cancelOrder, args);
     }
+
+    callback();
   }.bind(this);
 
   this.poloniex.cancelOrder(this.currency, this.asset, order, cancel);
@@ -202,7 +248,7 @@ Trader.getCapabilities = function () {
       'EMO', 'ENC', 'ETC', 'ETH', 'eTOK', 'EXE', 'EXP', 'FAC', 'FCN', 'FCT',
       'FIBRE', 'FLAP', 'FLDC', 'FLO', 'FLT', 'FOX', 'FRAC', 'FRK', 'FRQ',
       'FVZ', 'FZ', 'FZN', 'GAME', 'GAP', 'GDN', 'GEMZ', 'GEO', 'GIAR', 'GLB',
-      'GML', 'GNS', 'GOLD', 'GPC', 'GPUC', 'GRC', 'GRCX', 'GRS', 'GUE', 'H2O',
+      'GML', 'GNS', 'GNT', 'GOLD', 'GPC', 'GPUC', 'GRC', 'GRCX', 'GRS', 'GUE', 'H2O',
       'HIRO', 'HOT', 'HUC', 'HUGE', 'HVC', 'HYP', 'HZ', 'IFC', 'INDEX', 'IOC',
       'ITC', 'IXC', 'JLH', 'JPC', 'JUG', 'KDC', 'KEY', 'LBC', 'LC', 'LCL',
       'LEAF', 'LGC', 'LOL', 'LOVE', 'LQD', 'LSK', 'LTBC', 'LTC', 'LTCX',
@@ -219,7 +265,7 @@ Trader.getCapabilities = function () {
       'UVC', 'VIA', 'VOOT', 'VOX', 'VRC', 'VTC', 'WC', 'WDC', 'WIKI', 'WOLF',
       'X13', 'XAI', 'XAP', 'XBC', 'XC', 'XCH', 'XCN', 'XCP', 'XCR', 'XDN',
       'XDP', 'XEM', 'XHC', 'XLB', 'XMG', 'XMR', 'XPB', 'XPM', 'XRP', 'XSI',
-      'XST', 'XSV', 'XUSD', 'XVC', 'XXC', 'YACC', 'YANG', 'YC', 'YIN'
+      'XST', 'XSV', 'XUSD', 'XVC', 'XXC', 'YACC', 'YANG', 'YC', 'YIN', 'ZEC'
     ],
     markets: [
       // *** BTC <-> XXX
@@ -501,6 +547,7 @@ Trader.getCapabilities = function () {
       { pair: ['BTC', 'YANG'], minimalOrder: { amount: 0.0001, unit: 'asset' } },
       { pair: ['BTC', 'YC'], minimalOrder: { amount: 0.0001, unit: 'asset' } },
       { pair: ['BTC', 'YIN'], minimalOrder: { amount: 0.0001, unit: 'asset' } },
+      { pair: ['BTC', 'ZEC'], minimalOrder: { amount: 0.0001, unit: 'asset' } },
 
       // *** USDT <-> XXX
       { pair: ['USDT', 'BTC'], minimalOrder: { amount: 0.0001, unit: 'asset' } },
@@ -538,7 +585,8 @@ Trader.getCapabilities = function () {
     requires: ['key', 'secret'],
     tid: 'tid',
     providesHistory: 'date',
-    providesFullHistory: true
+    providesFullHistory: true,
+    tradable: true
   };
 }
 

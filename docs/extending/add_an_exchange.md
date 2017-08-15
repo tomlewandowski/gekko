@@ -1,6 +1,6 @@
 # Exchanges
 
-*This is a technical document about the requirements per exchange as implemented for Gekko in the `exchange` folder.*
+*This is a technical document about adding a new exchange to Gekko.*
 
 Gekko arranges all communication about when assets need to be bought or sold between the *strategy* and the *portfolio manager*. Exchanges are implemented by the portfolio manager, all differences between the different API's are abstracted away just below the portfolio manager. This document describes all requirements for adding a new exchange to Gekko.
 
@@ -51,17 +51,23 @@ The callback needs to have the parameters of `err` and `portfolio`. Portfolio ne
 
 This should create a buy / sell order at the exchange for [amount] of [asset] at [price] per 1 asset. If you have set `direct` to `true` the price will be `false`. The callback needs to have the parameters `err` and `order`. The order needs to be something that can be fed back to the exchange to see wether the order has been filled or not.
 
+### getOrder
+
+    this.exchange.getOrder(order, callback);
+
+The order will be something that the manager previously received via the `sell` or `buy` methods. The callback should have the parameters `err` and `order`. Order is an object with properties `price`, `amount` and `date`. Price is the (volume weighted) average price of all trades necesarry to execute the order. Amount is the amount of currency traded and Date is a moment object of the last trade part of this order.
+
 ### checkOrder
 
     this.exchange.checkOrder(order, callback);
 
-The order will be something that the manager previously received via the `sell` or `buy` methods. The callback should have the parameters `err` and `filled`. Filled is a boolean that is true when the order is already filled and false when it is not. Currently only partially filled orders should be treated as not filled.
+The order will be something that the manager previously received via the `sell` or `buy` methods. The callback should have the parameters `err` and `filled`. Filled is a boolean that is true when the order is already filled and false when it is not. Currently partially filled orders should be treated as not filled.
 
 ### cancelOrder
 
-    this.exchange.cancelOrder(order);
+    this.exchange.cancelOrder(order, callback);
 
-The order will be something that the manager previously received via the `sell` or `buy` methods.
+The order will be something that the manager previously received via the `sell` or `buy` methods. The callback should have the parameterer `err`.
 
 ## Trading method's expectations
 
@@ -100,8 +106,8 @@ Each exchange *must* provide a `getCapabilities()` static method that returns an
     - `tid`: When Gekko needs to pass in a trade id to act as a starting point in time.
     - `false`: When the exchange does not support to give back historical data at all.
 - `fetchTimespan`: if the timespan between first and last trade per fetch is fixed, set it here in minutes.
-- `monitorError`: if Gekko is currently not able to monitor this exchange, please set it to an URL explaining the problem.
-- `tradeError`: If gekko is currently not able to trade at this exchange, please set it to an URL explaining the problem.
+- `tradable`: if gekko supports automatic trading on this exchange.
+- `requires`: if gekko supports automatic trading, this is an array of required api credentials gekko needs to pass into the constructor.
 
 Below is a real-case example how `bistamp` exchange provides its `getCapabilities()` method:
 
