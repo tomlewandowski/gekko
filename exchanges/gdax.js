@@ -17,6 +17,7 @@ var Trader = function(config) {
     this.scanbackTid = 0;
     this.scanbackResults = [];
     this.asset = config.asset;
+    this.currency = config.currency;
 
     if(_.isObject(config)) {
         this.key = config.key;
@@ -112,7 +113,7 @@ Trader.prototype.normalizeResult = callback => {
 Trader.prototype.buy = function(amount, price, callback) {
     var args = _.toArray(arguments);
     var buyParams = {
-        'price': this.getMaxDecimalsNumber(price),
+        'price': this.getMaxDecimalsNumber(price, this.currency == 'BTC' ? 5 : 2),
         'size': this.getMaxDecimalsNumber(amount),
         'product_id': this.pair,
         'post_only': this.post_only
@@ -132,7 +133,7 @@ Trader.prototype.buy = function(amount, price, callback) {
 Trader.prototype.sell = function(amount, price, callback) {
     var args = _.toArray(arguments);
     var sellParams = {
-        'price': this.getMaxDecimalsNumber(price),
+        'price': this.getMaxDecimalsNumber(price, this.currency == 'BTC' ? 5 : 2),
         'size': this.getMaxDecimalsNumber(amount),
         'product_id': this.pair,
         'post_only': this.post_only
@@ -183,6 +184,15 @@ Trader.prototype.getOrder = function(order, callback) {
 
     var result = function(err, data) {
         if(err) {
+            if(err.message === 'NotFound') {
+                log.debug('GDAX NotFound error, spoofing order');
+                return callback(undefined, {
+                  price: 0,
+                  amount: 0,
+                  date: moment.unix(0)
+                });
+            }
+
             log.error('GDAX ERROR:', err);
             return this.retry(this.checkOrder, args);
         }
@@ -328,7 +338,8 @@ Trader.getCapabilities = function () {
     providesHistory: 'date',
     providesFullHistory: true,
     tid: 'tid',
-    tradable: true
+    tradable: true,
+    forceReorderDelay: true
   };
 }
 
